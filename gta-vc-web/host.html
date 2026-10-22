@@ -747,24 +747,43 @@
         let isServingFromServer = true;
 
         async function fetchFileBuffer(path) {
-            // If the user selected files manually via folder picker
-            const lowerPath = path.toLowerCase();
-            if (filesMap.has(lowerPath)) {
-                const file = filesMap.get(lowerPath);
-                return new Promise((resolve, reject) => {
-                    const reader = new FileReader();
-                    reader.onload = () => resolve(reader.result);
-                    reader.onerror = reject;
-                    reader.readAsArrayBuffer(file);
-                });
+            const normalized = path.replace(/\\/g, '/').toLowerCase();
+            const clean = normalized.replace(/^\/+/, '');
+            const candidates = [
+                clean,
+                clean.startsWith('vc-assets/local/') ? clean : ('vc-assets/local/' + clean),
+                clean.startsWith('vc-assets/') ? clean : ('vc-assets/' + clean),
+                clean.replace(/^vc-assets\/local\//, ''),
+                clean.replace(/^vc-assets\//, ''),
+            ];
+            const uniqueCandidates = [...new Set(candidates)];
+
+            // Check manual files map first
+            for (const cand of uniqueCandidates) {
+                if (filesMap.has(cand)) {
+                    const file = filesMap.get(cand);
+                    return new Promise((resolve, reject) => {
+                        const reader = new FileReader();
+                        reader.onload = () => resolve(reader.result);
+                        reader.onerror = reject;
+                        reader.readAsArrayBuffer(file);
+                    });
+                }
             }
 
-            // Default: Fetch directly from HTTP server
-            const resp = await fetch(path);
-            if (!resp.ok) {
-                throw new Error(`HTTP ${resp.status} for ${path}`);
+            // Fetch from HTTP server trying candidate paths
+            for (const cand of uniqueCandidates) {
+                try {
+                    const resp = await fetch(cand);
+                    if (resp.ok) {
+                        const contentType = resp.headers.get('content-type') || '';
+                        if (!contentType.includes('text/html') || cand.endsWith('.html') || cand.endsWith('.htm')) {
+                            return await resp.arrayBuffer();
+                        }
+                    }
+                } catch (e) {}
             }
-            return await resp.arrayBuffer();
+            throw new Error(`Asset not found: ${path} (tried ${uniqueCandidates.join(', ')})`);
         }
 
         const progressBar = document.getElementById('progressBar');
@@ -855,12 +874,10 @@
                             data: new Uint8Array(buffer),
                         }, '*', [buffer]);
                     } catch (e) {
-                        // If a file is missing or directory, post empty buffer so wasm doesn't hang
-                        console.warn(`[InitFile] Skipping/Empty ${path}:`, e.message);
+                        console.warn(`[InitFile] Skipping ${path}:`, e.message);
                         event.source.postMessage({
                             event: '>module.initfile',
                             path,
-                            data: new Uint8Array(0),
                         }, '*');
                     }
 
@@ -877,7 +894,13 @@
             } 
             else if (data.event === 'game-started') {
                 // Engine mainCalled fired — give first frame ~800ms to render, then reveal
-                setTimeout(hideOverlay, 800);
+                setTimeout(() => {
+                    hideOverlay();
+                    const frame = document.getElementById('gameFrame');
+                    if (frame && frame.contentWindow) {
+                        try { frame.contentWindow.focus(); } catch (e) {}
+                    }
+                }, 800);
             }
             else if (data.event === 'module.getasyncurl' && data.file) {
                 const targetFile = data.file.replaceAll('\\', '/').toLowerCase();
@@ -901,6 +924,25 @@
                     viewportCard.requestFullscreen().catch(() => {});
                 }
             }
+        });
+
+        // Forward keyboard events from parent window to game iframe so gameplay controls work seamlessly
+        ['keydown', 'keyup'].forEach(eventType => {
+            window.addEventListener(eventType, (e) => {
+                const frame = document.getElementById('gameFrame');
+                if (frame && frame.contentWindow && document.activeElement !== frame) {
+                    try {
+                        frame.contentWindow.dispatchEvent(new KeyboardEvent(e.type, {
+                            key: e.key,
+                            code: e.code,
+                            keyCode: e.keyCode,
+                            which: e.which,
+                            bubbles: true,
+                            cancelable: true
+                        }));
+                    } catch (err) {}
+                }
+            });
         });
     </script>
 </body>

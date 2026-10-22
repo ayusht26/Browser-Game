@@ -22,6 +22,13 @@ mimetypes.add_type("application/octet-stream", ".ifp")
 mimetypes.add_type("application/octet-stream", ".sdt")
 mimetypes.add_type("application/octet-stream", ".raw")
 mimetypes.add_type("application/octet-stream", ".adf")
+mimetypes.add_type("application/octet-stream", ".scm")
+mimetypes.add_type("application/octet-stream", ".cfg")
+mimetypes.add_type("application/octet-stream", ".zon")
+mimetypes.add_type("application/octet-stream", ".gxt")
+mimetypes.add_type("application/octet-stream", ".sc")
+mimetypes.add_type("application/octet-stream", ".img")
+mimetypes.add_type("font/ttf", ".ttf")
 
 class ViceCityHTTPHandler(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
@@ -39,6 +46,14 @@ class ViceCityHTTPHandler(SimpleHTTPRequestHandler):
         # Route root requests to host.html
         if self.path == "/" or self.path == "":
             self.path = "/host.html"
+            return super().do_GET()
+
+        # Disallow directory listings for asset directories
+        full_path = self.translate_path(self.path)
+        if os.path.isdir(full_path):
+            self.send_error(404, "Directory listing forbidden")
+            return None
+
         return super().do_GET()
 
 def run_server():

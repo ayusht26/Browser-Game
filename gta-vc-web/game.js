@@ -138,20 +138,25 @@ async function loadGame() {
                                     }
                                 }
                                 if (data.data && data.data.length > 0) {
+                                    const cleanPath = data.path.startsWith('/') ? data.path : ('/' + data.path);
+                                    try {
+                                        const existing = Module.FS.analyzePath(cleanPath);
+                                        if (existing && existing.exists) {
+                                            if (Module.FS.isDir(existing.object.mode)) {
+                                                Module.FS.rmdir(cleanPath);
+                                            } else {
+                                                Module.FS.unlink(cleanPath);
+                                            }
+                                        }
+                                    } catch (e) {}
                                     try {
                                         Module.FS.createDataFile(data.path, 0, data.data, data.data.length);
                                     } catch (e) {
-                                        console.warn('createDataFile notice for:', data.path, e.message);
-                                    }
-                                } else {
-                                    try {
-                                        Module.FS.mkdir(data.path);
-                                    } catch (e) {
-                                        // Directory exists, ignore
+                                        console.warn('createDataFile notice for:', data.path, e);
                                     }
                                 }
                             } catch (e) {
-                                console.warn('FS init notice:', data.path, e.message);
+                                console.warn('FS init notice:', data.path, e);
                             }
                             files--;
                         }
@@ -227,16 +232,24 @@ async function loadGame() {
         }),
         mainCalled: async () => {
             try {
-                // Dirs may already exist from a prior IDBFS session — ignore EEXIST
                 try { Module.FS.mkdir("/vc-assets"); } catch (e) { /* already exists */ }
                 try { Module.FS.mkdir("/vc-assets/local"); } catch (e) { /* already exists */ }
 
                 await Module.initFS();
 
-                try { Module.FS.unlink("/vc-assets/local/revc.ini"); } catch (e) { /* not found, ok */ }
+                try {
+                    const iniNode = Module.FS.analyzePath("/vc-assets/local/revc.ini");
+                    if (iniNode && iniNode.exists) {
+                        if (Module.FS.isDir(iniNode.object.mode)) {
+                            Module.FS.rmdir("/vc-assets/local/revc.ini");
+                        } else {
+                            Module.FS.unlink("/vc-assets/local/revc.ini");
+                        }
+                    }
+                } catch (e) {}
                 try {
                     Module.FS.createDataFile("/vc-assets/local/revc.ini", 0, revc_ini, revc_ini.length);
-                } catch (e) { console.warn('revc.ini write:', e.message); }
+                } catch (e) { console.warn('revc.ini write:', e); }
 
                 try {
                     Module['_async_main']();
@@ -300,6 +313,26 @@ async function loadGame() {
         event.preventDefault();
         return '';
     };
+
+    try {
+        if (localStorage.getItem('vc_fs_cleaned_v3') !== '1') {
+            if (window.indexedDB && window.indexedDB.databases) {
+                const dbs = await window.indexedDB.databases();
+                for (const db of dbs) {
+                    if (db.name) {
+                        window.indexedDB.deleteDatabase(db.name);
+                    }
+                }
+            } else if (window.indexedDB) {
+                window.indexedDB.deleteDatabase('/local');
+                window.indexedDB.deleteDatabase('/vc-assets/local');
+                window.indexedDB.deleteDatabase('/');
+            }
+            localStorage.setItem('vc_fs_cleaned_v3', '1');
+        }
+    } catch (e) {
+        console.warn('IDB clean notice:', e);
+    }
 
     window.Module = Module;
     const script = document.createElement('script');

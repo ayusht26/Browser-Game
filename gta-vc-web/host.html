@@ -788,30 +788,36 @@
             btnStartGame.addEventListener('click', triggerGameLaunch);
         }
 
+        let overlayFallbackTimer = null;
+        function finishPreload() {
+            if (loadingOverlay.classList.contains('hidden')) return;
+            progressBar.style.width = '100%';
+            progressPercent.textContent = '100%';
+            progressStatus.textContent = 'Launching Vice City Engine...';
+            currentFileText.textContent = 'All virtual files mounted — starting engine...';
+            // Safety net: hide overlay after 10s even if game-started never fires
+            overlayFallbackTimer = setTimeout(hideOverlay, 10000);
+        }
+
+        function hideOverlay() {
+            if (overlayFallbackTimer) { clearTimeout(overlayFallbackTimer); overlayFallbackTimer = null; }
+            if (loadingOverlay.classList.contains('hidden')) return;
+            loadingOverlay.classList.add('hidden');
+            const frame = document.getElementById('gameFrame');
+            if (frame && frame.contentWindow) {
+                try { frame.contentWindow.focus(); } catch (e) {}
+            }
+        }
+
+        loadingOverlay.addEventListener('click', () => {
+            if (currentFile >= Math.floor(initialFiles.length * 0.9)) {
+                finishPreload();
+            }
+        });
+
         window.addEventListener('message', async (event) => {
             const data = event.data;
             if (!data) return;
-
-            function finishPreload() {
-                if (loadingOverlay.classList.contains('hidden')) return;
-                progressBar.style.width = '100%';
-                progressPercent.textContent = '100%';
-                progressStatus.textContent = 'Launching Vice City Engine...';
-                currentFileText.textContent = 'All virtual files mounted successfully.';
-                setTimeout(() => {
-                    loadingOverlay.classList.add('hidden');
-                    const frame = document.getElementById('gameFrame');
-                    if (frame && frame.contentWindow) {
-                        try { frame.contentWindow.focus(); } catch (e) {}
-                    }
-                }, 400);
-            }
-
-            loadingOverlay.addEventListener('click', () => {
-                if (currentFile >= Math.floor(initialFiles.length * 0.9)) {
-                    finishPreload();
-                }
-            });
 
             if (data.event === 'module.initfs') {
                 if (btnStartGame) btnStartGame.style.display = 'none';
@@ -869,6 +875,10 @@
             else if (data.event === 'module.initdone') {
                 finishPreload();
             } 
+            else if (data.event === 'game-started') {
+                // Engine mainCalled fired — give first frame ~800ms to render, then reveal
+                setTimeout(hideOverlay, 800);
+            }
             else if (data.event === 'module.getasyncurl' && data.file) {
                 const targetFile = data.file.replaceAll('\\', '/').toLowerCase();
                 try {

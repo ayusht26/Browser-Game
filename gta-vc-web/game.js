@@ -227,20 +227,27 @@ async function loadGame() {
         }),
         mainCalled: async () => {
             try {
-                Module.FS.mkdir("/vc-assets");
-                Module.FS.mkdir("/vc-assets/local");
+                // Dirs may already exist from a prior IDBFS session — ignore EEXIST
+                try { Module.FS.mkdir("/vc-assets"); } catch (e) { /* already exists */ }
+                try { Module.FS.mkdir("/vc-assets/local"); } catch (e) { /* already exists */ }
 
                 await Module.initFS();
 
+                try { Module.FS.unlink("/vc-assets/local/revc.ini"); } catch (e) { /* not found, ok */ }
                 try {
-                    Module.FS.unlink("/vc-assets/local/revc.ini");
+                    Module.FS.createDataFile("/vc-assets/local/revc.ini", 0, revc_ini, revc_ini.length);
+                } catch (e) { console.warn('revc.ini write:', e.message); }
+
+                try {
+                    Module['_async_main']();
                 } catch (e) {
-                    // ignore
+                    console.error('_async_main error:', e);
+                } finally {
+                    window.top.postMessage({ event: 'game-started' }, '*');
                 }
-                Module.FS.createDataFile("/vc-assets/local/revc.ini", 0, revc_ini, revc_ini.length);
-                Module['_async_main']();
             } catch (e) {
                 console.error('mainCalled error:', e);
+                window.top.postMessage({ event: 'game-started' }, '*');
             }
         },
         syncRevcIni: () => {
@@ -300,6 +307,7 @@ async function loadGame() {
     script.src = 'index.js';
     document.body.appendChild(script);
 
+    // Apply immediately so the body is black (matching the canvas) while engine loads
     document.body.classList.add('gameIsStarted');
 
     const emulator = new GamepadEmulator();

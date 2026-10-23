@@ -1082,6 +1082,101 @@
             gameFrame.src = 'game.html?autostart=1';
         });
 
+        // IN-MEMORY PACK FILES CACHE
+        const packFilesMap = new Map();
+
+        // FAST PACK STREAMING LOADER
+        async function loadAndStreamPacks(eventSource) {
+            const metaResp = await fetch('packs/packs.json');
+            if (!metaResp.ok) throw new Error('packs.json not found');
+            const meta = await metaResp.json();
+            const packs = meta.packs;
+            const totalGz = meta.total_gz_bytes;
+            const bytesByPack = {};
+            const cacheName = 'gta-vc-cache-v1';
+
+            async function fetchPack(packInfo, idx) {
+                let compressedBlob = null;
+                
+                // Try CacheStorage first for instant replay
+                try {
+                    if ('caches' in window) {
+                        const cache = await caches.open(cacheName);
+                        const cached = await cache.match('packs/' + packInfo.file);
+                        if (cached) {
+                            compressedBlob = await cached.blob();
+                            bytesByPack[idx] = packInfo.gz_bytes;
+                        }
+                    }
+                } catch (e) {}
+
+                if (!compressedBlob) {
+                    const resp = await fetch('packs/' + packInfo.file);
+                    if (!resp.ok) throw new Error(`HTTP error ${resp.status} for ${packInfo.file}`);
+
+                    // Save to CacheStorage in background
+                    try {
+                        if ('caches' in window) {
+                            const cache = await caches.open(cacheName);
+                            cache.put('packs/' + packInfo.file, resp.clone()).catch(() => {});
+                        }
+                    } catch (e) {}
+
+                    const reader = resp.body.getReader();
+                    const chunks = [];
+                    let loaded = 0;
+                    while (true) {
+                        const { done, value } = await reader.read();
+                        if (done) break;
+                        chunks.push(value);
+                        loaded += value.length;
+                        bytesByPack[idx] = loaded;
+
+                        const curTotal = Object.values(bytesByPack).reduce((a, b) => a + b, 0);
+                        const pct = Math.min(99, Math.floor((curTotal / totalGz) * 100));
+                        const mbNow = (curTotal / (1024 * 1024)).toFixed(1);
+                        const mbTotal = (totalGz / (1024 * 1024)).toFixed(1);
+                        updateProgress(pct, `Fast Stream: ${mbNow} MB / ${mbTotal} MB (${pct}%)`);
+                    }
+                    compressedBlob = new Blob(chunks);
+                }
+
+                // Native browser C++ decompression via DecompressionStream
+                const ds = compressedBlob.stream().pipeThrough(new DecompressionStream('gzip'));
+                const arrayBuffer = await new Response(ds).arrayBuffer();
+
+                const view = new DataView(arrayBuffer);
+                const manifestLen = view.getUint32(0, true);
+                const manifestBytes = new Uint8Array(arrayBuffer, 4, manifestLen);
+                const manifest = JSON.parse(new TextDecoder().decode(manifestBytes));
+                const bodyBuffer = arrayBuffer.slice(4 + manifestLen);
+
+                // Populate in-memory map for fast fallback lookups
+                const u8 = new Uint8Array(bodyBuffer);
+                for (const path in manifest) {
+                    const [off, len] = manifest[path];
+                    packFilesMap.set(path.toLowerCase(), u8.subarray(off, off + len));
+                }
+
+                return { manifest, bodyBuffer };
+            }
+
+            // Fetch all 3 packs concurrently in parallel!
+            const loadedPacks = await Promise.all(packs.map((p, i) => fetchPack(p, i)));
+
+            // Transfer each pack to the game engine with ZERO-COPY
+            for (let i = 0; i < loadedPacks.length; i++) {
+                const isLast = (i === loadedPacks.length - 1);
+                updateProgress(99, `Mounting Virtual Drive (${i + 1}/${loadedPacks.length})...`);
+                eventSource.postMessage({
+                    event: '>module.initpack',
+                    manifest: loadedPacks[i].manifest,
+                    buffer: loadedPacks[i].bodyBuffer,
+                    isLast
+                }, '*', [loadedPacks[i].bodyBuffer]);
+            }
+        }
+
         // CORE FILE BUFFER RESOLVER
         async function fetchFileBuffer(path) {
             const normalized = path.replace(/\\/g, '/').toLowerCase();
@@ -1101,6 +1196,14 @@
             ];
             const unique = [...new Set(candidates)];
 
+            // 1. Check in-memory pack cache first!
+            for (const cand of unique) {
+                if (packFilesMap.has(cand)) {
+                    return packFilesMap.get(cand).buffer;
+                }
+            }
+
+            // 2. Check user-provided custom files
             for (const cand of unique) {
                 if (filesMap.has(cand)) {
                     const file = filesMap.get(cand);
@@ -1113,6 +1216,7 @@
                 }
             }
 
+            // 3. Fallback to network fetch
             for (const cand of unique) {
                 try {
                     const resp = await fetch(cand);
@@ -1134,10 +1238,18 @@
 
             if (data.event === 'module.initfs') {
                 try {
+                    await loadAndStreamPacks(event.source);
+                    return;
+                } catch (packErr) {
+                    console.warn('[FastPack] Fallback to legacy loader:', packErr);
+                }
+
+                // Legacy fallback if packs fail
+                try {
                     const preloadText = await (await fetch('preload_files.list')).text();
                     const list = preloadText.split('\n')
                         .map(l => l.trim().toLowerCase())
-                        .filter(l => l.length > 0 && !l.startsWith('#'));
+                        .filter(l => l.length > 0 && !l.startsWith('#') && !l.endsWith('flash.adf'));
 
                     initialFiles = Array.from(new Set(list));
                     currentFile = -1;

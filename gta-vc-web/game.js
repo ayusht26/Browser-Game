@@ -142,6 +142,45 @@ async function loadGame() {
                     if (data.event === '>module.initfs') {
                         files = data.files;
                     }
+                    if (data.event === '>module.initpack') {
+                        const manifest = data.manifest;
+                        const u8 = new Uint8Array(data.buffer);
+                        for (const relPath in manifest) {
+                            const [offset, len] = manifest[relPath];
+                            const fileData = u8.subarray(offset, offset + len);
+
+                            const parts = relPath.split('/');
+                            let p = '';
+                            for (let i = 0; i < parts.length - 1; i++) {
+                                p += '/' + parts[i];
+                                try { Module.FS.mkdir(p); } catch (e) {}
+                            }
+
+                            const cleanPath = relPath.startsWith('/') ? relPath : ('/' + relPath);
+                            try {
+                                const existing = Module.FS.analyzePath(cleanPath);
+                                if (existing && existing.exists) {
+                                    if (Module.FS.isDir(existing.object.mode)) {
+                                        Module.FS.rmdir(cleanPath);
+                                    } else {
+                                        Module.FS.unlink(cleanPath);
+                                    }
+                                }
+                            } catch (e) {}
+
+                            try {
+                                Module.FS.createDataFile(relPath, 0, fileData, fileData.length);
+                            } catch (e) {
+                                console.warn('createDataFile pack error:', relPath, e);
+                            }
+                        }
+
+                        if (data.isLast) {
+                            window.top.postMessage({ event: 'module.initdone' }, '*');
+                            resolve();
+                        }
+                        return;
+                    }
 
                     if (data.event === '>module.initfile' || data.event === '>module.initfs') {
                         if (data.event === '>module.initfile') {

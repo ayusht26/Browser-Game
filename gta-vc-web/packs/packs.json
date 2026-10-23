@@ -1,0 +1,25 @@
+{
+  "packs": [
+    {
+      "file": "startup_1.pack.gz",
+      "files_count": 1055,
+      "raw_bytes": 32537016,
+      "gz_bytes": 16991411
+    },
+    {
+      "file": "startup_2.pack.gz",
+      "files_count": 529,
+      "raw_bytes": 32550572,
+      "gz_bytes": 18201775
+    },
+    {
+      "file": "startup_3.pack.gz",
+      "files_count": 338,
+      "raw_bytes": 32421812,
+      "gz_bytes": 12747538
+    }
+  ],
+  "total_files": 1922,
+  "total_raw_bytes": 97378167,
+  "total_gz_bytes": 47940724
+}

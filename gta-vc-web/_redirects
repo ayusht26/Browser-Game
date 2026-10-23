@@ -1,1 +1,2 @@
-/  /host.html  200
+/host  /index.html  200
+/host.html  /index.html  200

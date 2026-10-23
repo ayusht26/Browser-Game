@@ -43,9 +43,9 @@ class ViceCityHTTPHandler(SimpleHTTPRequestHandler):
         super().end_headers()
 
     def do_GET(self):
-        # Route root requests to host.html
+        # Route root requests to index.html
         if self.path == "/" or self.path == "":
-            self.path = "/host.html"
+            self.path = "/index.html"
             return super().do_GET()
 
         # Disallow directory listings for asset directories

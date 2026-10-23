@@ -890,7 +890,7 @@
             loaderBox.classList.add('active');
 
             // Set iframe src to initiate engine
-            gameFrame.src = 'index.html?autostart=1';
+            gameFrame.src = 'game.html?autostart=1';
         }
 
         btnStartGame.addEventListener('click', startLoadingEngine);
@@ -1079,7 +1079,7 @@
         fileInput.addEventListener('change', (e) => {
             filesMap = new Map(Array.from(e.target.files).map(f => [f.webkitRelativePath.toLowerCase(), f]));
             showToast(`Loaded ${filesMap.size} custom files`);
-            gameFrame.src = 'index.html?autostart=1';
+            gameFrame.src = 'game.html?autostart=1';
         });
 
         // CORE FILE BUFFER RESOLVER

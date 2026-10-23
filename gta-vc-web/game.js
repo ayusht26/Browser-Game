@@ -1,10 +1,19 @@
 window.haveOriginalGame = true;
 window.addEventListener('error', (e) => {
+    if (e.message && (e.message.includes('ExitStatus') || e.message.includes('program exited'))) {
+        try { window.top.postMessage({ event: 'game-quit' }, '*'); } catch (err) {}
+        return;
+    }
     const errText = `[IFRAME ERROR] ${e.message} at ${e.filename}:${e.lineno}:${e.colno}\nStack: ${e.error && e.error.stack ? e.error.stack : ''}`;
     console.error(errText);
     try { window.top.postMessage({ event: 'engine-error', error: errText }, '*'); } catch (err) {}
 });
 window.addEventListener('unhandledrejection', (e) => {
+    const reasonStr = String(e.reason && e.reason.message ? e.reason.message : e.reason);
+    if (reasonStr.includes('ExitStatus') || reasonStr.includes('program exited')) {
+        try { window.top.postMessage({ event: 'game-quit' }, '*'); } catch (err) {}
+        return;
+    }
     const errText = `[IFRAME REJECTION] ${e.reason && e.reason.stack ? e.reason.stack : String(e.reason)}`;
     console.error(errText);
     try { window.top.postMessage({ event: 'engine-error', error: errText }, '*'); } catch (err) {}
@@ -311,6 +320,14 @@ async function loadGame() {
         },
         hotelMission: () => {
             console.log("Hotel mission checkpoint verified - Full game unlocked");
+        },
+        onExit: (status) => {
+            console.log("Game onExit fired:", status);
+            try { window.top.postMessage({ event: 'game-quit' }, '*'); } catch (e) {}
+        },
+        quit: (status, toThrow) => {
+            console.log("Game quit fired:", status);
+            try { window.top.postMessage({ event: 'game-quit' }, '*'); } catch (e) {}
         },
     };
     Module.log = Module.print;

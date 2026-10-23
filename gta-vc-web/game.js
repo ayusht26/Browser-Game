@@ -1,4 +1,14 @@
 window.haveOriginalGame = true;
+window.addEventListener('error', (e) => {
+    const errText = `[IFRAME ERROR] ${e.message} at ${e.filename}:${e.lineno}:${e.colno}\nStack: ${e.error && e.error.stack ? e.error.stack : ''}`;
+    console.error(errText);
+    try { window.top.postMessage({ event: 'engine-error', error: errText }, '*'); } catch (err) {}
+});
+window.addEventListener('unhandledrejection', (e) => {
+    const errText = `[IFRAME REJECTION] ${e.reason && e.reason.stack ? e.reason.stack : String(e.reason)}`;
+    console.error(errText);
+    try { window.top.postMessage({ event: 'engine-error', error: errText }, '*'); } catch (err) {}
+});
 const params = new URLSearchParams(window.location.search);
 const cloudSavesStatus = document.getElementById('cloud-saves-status');
 var statusElement = document.getElementById("status");
@@ -275,8 +285,16 @@ async function loadGame() {
         },
         preRun: [],
         postRun: [],
-        print: (...args) => console.log(args.join(' ')),
-        printErr: (...args) => console.error(args.join(' ')),
+        print: (...args) => {
+            const msg = args.join(' ');
+            console.log(msg);
+            try { window.top.postMessage({ event: 'engine-stdout', text: msg }, '*'); } catch (e) {}
+        },
+        printErr: (...args) => {
+            const msg = args.join(' ');
+            console.error(msg);
+            try { window.top.postMessage({ event: 'engine-stderr', text: msg }, '*'); } catch (e) {}
+        },
         canvas: function () {
             const canvas = document.getElementById('canvas');
             canvas.addEventListener('webglcontextlost', (e) => {
@@ -300,7 +318,7 @@ async function loadGame() {
         info,
         receiveInstance,
     ) => {
-        const wasm = await (await fetch(wasm_content ? wasm_content : "index.wasm")).arrayBuffer();
+        const wasm = await (await fetch(wasm_content ? wasm_content : ("index.wasm?v=" + Date.now()))).arrayBuffer();
         const module = await WebAssembly.instantiate(wasm, info);
         return receiveInstance(module.instance, module);
     };

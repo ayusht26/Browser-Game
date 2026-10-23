@@ -748,13 +748,19 @@
 
         async function fetchFileBuffer(path) {
             const normalized = path.replace(/\\/g, '/').toLowerCase();
-            const clean = normalized.replace(/^\/+/, '');
+            const clean = normalized.replace(/^(\.\/|\/)+/, '');
+            const stripped = clean.replace(/^fetched\//, '');
             const candidates = [
                 clean,
+                stripped,
                 clean.startsWith('vc-assets/local/') ? clean : ('vc-assets/local/' + clean),
+                stripped.startsWith('vc-assets/local/') ? stripped : ('vc-assets/local/' + stripped),
                 clean.startsWith('vc-assets/') ? clean : ('vc-assets/' + clean),
+                stripped.startsWith('vc-assets/') ? stripped : ('vc-assets/' + stripped),
                 clean.replace(/^vc-assets\/local\//, ''),
                 clean.replace(/^vc-assets\//, ''),
+                stripped.replace(/^vc-assets\/local\//, ''),
+                stripped.replace(/^vc-assets\//, ''),
             ];
             const uniqueCandidates = [...new Set(candidates)];
 
@@ -923,6 +929,21 @@
                 if (!document.fullscreenElement) {
                     viewportCard.requestFullscreen().catch(() => {});
                 }
+            }
+            else if (data.event === 'engine-error') {
+                console.error('[PARENT ENGINE ERROR]', data.error);
+                window.__lastEngineError = data.error;
+                window.__engineLogs = window.__engineLogs || [];
+                window.__engineLogs.push({ type: 'error', data: data.error, time: Date.now() });
+            }
+            else if (data.event === 'engine-stderr') {
+                console.warn('[PARENT ENGINE STDERR]', data.text);
+                window.__engineLogs = window.__engineLogs || [];
+                window.__engineLogs.push({ type: 'stderr', text: data.text, time: Date.now() });
+            }
+            else if (data.event === 'engine-stdout') {
+                window.__engineLogs = window.__engineLogs || [];
+                window.__engineLogs.push({ type: 'stdout', text: data.text, time: Date.now() });
             }
         });
 
